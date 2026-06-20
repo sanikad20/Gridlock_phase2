@@ -1,6 +1,10 @@
 """
-Gridlock Hackathon 2.0 — api/main.py (UPDATED v3.1)
+Gridlock Hackathon 2.0 — api/main.py (UPDATED v3.2)
 ====================================================
+New in v3.2:
+  - /similar-events now returns latitude/longitude per result,
+    so the frontend can plot historical incident markers on the map.
+
 New in v3.1:
   - Event Type / Event Cause validation — prevents invalid combinations
   - Enforces Planned vs Unplanned event rules
@@ -15,7 +19,7 @@ from datetime import datetime, timedelta
 import numpy as np
 import pandas as pd
 
-app = FastAPI(title="Gridlock Congestion API", version="3.1")
+app = FastAPI(title="Gridlock Congestion API", version="3.2")
 
 # ══════════════════════════════════════════════
 # LOAD MODEL ARTIFACTS
@@ -147,7 +151,7 @@ init_db()
 class EventInput(BaseModel):
     event_type            : str
     event_cause           : str
-    priority              : str
+    priority               : str
     requires_road_closure : bool
     latitude              : float
     longitude             : float
@@ -208,20 +212,20 @@ def build_feature_row(e: EventInput) -> pd.DataFrame:
     Build feature row from EventInput with validation.
     Ensures event_type and event_cause are valid combinations.
     """
-    
+
     # ── VALIDATION: Event Type vs Event Cause ──
     if e.event_type == "planned" and e.event_cause not in PLANNED_CAUSES:
         raise ValueError(
             f"❌ Invalid combination: '{e.event_cause}' cannot be a PLANNED event.\n"
             f"Valid planned causes: {sorted(PLANNED_CAUSES)}"
         )
-    
+
     if e.event_type == "unplanned" and e.event_cause not in UNPLANNED_CAUSES:
         raise ValueError(
             f"❌ Invalid combination: '{e.event_cause}' is not an UNPLANNED event.\n"
             f"Valid unplanned causes: {sorted(UNPLANNED_CAUSES)}"
         )
-    
+
     # ── FEATURE ENGINEERING ──
     is_peak    = 1 if e.hour in [8, 9, 10, 17, 18, 19] else 0
     is_weekend = 1 if e.day_of_week >= 5 else 0
@@ -363,7 +367,7 @@ def cosine_sim(v1: np.ndarray, v2: np.ndarray) -> float:
 
 @app.get("/")
 def root():
-    return {"status": "running", "message": "Gridlock Congestion API v3.1", "features": len(FEATURES)}
+    return {"status": "running", "message": "Gridlock Congestion API v3.2", "features": len(FEATURES)}
 
 @app.get("/health")
 def health():
@@ -381,7 +385,7 @@ def predict_event(e: EventInput):
         row = build_feature_row(e)
     except ValueError as ve:
         raise HTTPException(400, str(ve))
-    
+
     pred_code = int(np.array(classifier.predict(row)).flatten()[0])
     severity  = SEVERITY_LABEL.get(pred_code, "Moderate")
     delay     = float(np.array(regressor.predict(row)).flatten()[0])
@@ -415,7 +419,7 @@ def predict_and_log(e: EventInput):
         row = build_feature_row(e)
     except ValueError as ve:
         raise HTTPException(400, str(ve))
-    
+
     pred_code = int(np.array(classifier.predict(row)).flatten()[0])
     severity  = SEVERITY_LABEL.get(pred_code, "Moderate")
     delay     = float(np.array(regressor.predict(row)).flatten()[0])
@@ -468,12 +472,12 @@ def digital_twin(e: DigitalTwinInput):
         police_station=e.police_station, junction=e.junction,
         hour=e.hour, day_of_week=e.day_of_week, month=e.month
     )
-    
+
     try:
         row = build_feature_row(base_event)
     except ValueError as ve:
         raise HTTPException(400, str(ve))
-    
+
     pred_code = int(np.array(classifier.predict(row)).flatten()[0])
     severity  = SEVERITY_LABEL.get(pred_code, "Moderate")
     delay     = float(np.array(regressor.predict(row)).flatten()[0])
@@ -519,12 +523,12 @@ def digital_twin(e: DigitalTwinInput):
 def predict_ensemble(e: EventInput):
     if not HAS_ENSEMBLE:
         raise HTTPException(400, "Ensemble not found.")
-    
+
     try:
         row = build_feature_row(e)
     except ValueError as ve:
         raise HTTPException(400, str(ve))
-    
+
     preds, names = [], []
 
     if "lgbm" in ensemble_models:
@@ -589,6 +593,18 @@ def log_outcome(o: OutcomeInput):
 def similar_events(e: EventInput, top_k: int = 3):
     """
     Returns top-k similar past events ranked by cosine similarity score (%).
+    Includes latitude/longitude so the frontend can plot historical
+    incident markers on the congestion map.
+
+    NOTE (fix): previously this used a plain LEFT JOIN against `outcomes`.
+    If an event had more than one outcome logged against it (e.g. the
+    operator submitted the outcome form twice for the same event_id), the
+    join would fan out and produce one result row per outcome — making the
+    same underlying incident appear as multiple "similar past events" in
+    the Memory Engine panel. The subquery below selects only the most
+    recently logged outcome per event, so each event contributes exactly
+    one row regardless of how many outcomes were recorded for it, while
+    still preserving events that have zero outcomes (plan_used = NULL).
     """
     query_vec = event_to_vector(e.dict())
 
@@ -597,10 +613,16 @@ def similar_events(e: EventInput, top_k: int = 3):
     rows = conn.execute("""
         SELECT ev.id, ev.event_type, ev.event_cause, ev.zone, ev.corridor,
                ev.priority, ev.requires_road_closure, ev.hour, ev.day_of_week, ev.month,
+               ev.latitude, ev.longitude,
                ev.pred_severity, ev.pred_delay_mins, ev.created_at,
                o.plan_used, o.delay_reduced_pct, o.notes
         FROM events ev
-        LEFT JOIN outcomes o ON ev.id = o.event_id
+        LEFT JOIN outcomes o ON o.id = (
+            SELECT id FROM outcomes
+            WHERE event_id = ev.id
+            ORDER BY logged_at DESC
+            LIMIT 1
+        )
         ORDER BY ev.created_at DESC
         LIMIT 200
     """).fetchall()
@@ -630,6 +652,8 @@ def similar_events(e: EventInput, top_k: int = 3):
             "event_cause"         : r["event_cause"],
             "zone"                : r["zone"],
             "corridor"            : r["corridor"],
+            "latitude"            : r["latitude"],
+            "longitude"           : r["longitude"],
             "predicted_severity"  : r["pred_severity"],
             "predicted_delay_mins": r["pred_delay_mins"],
             "plan_used"           : r["plan_used"],
