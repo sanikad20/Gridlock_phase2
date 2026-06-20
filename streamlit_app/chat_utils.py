@@ -5,6 +5,14 @@ Powered by Groq API (Llama 3.3 70B)
 
 import os
 from groq import Groq
+from dotenv import load_dotenv
+
+# Load .env from parent directory (project root)
+load_dotenv('../.env')
+
+# Now your other imports
+import streamlit as st
+import requests
 
 def init_groq_client():
     """Initialize Groq client with API key from environment."""
