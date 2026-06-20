@@ -3,10 +3,20 @@
 **Flipkart Gridlock Hackathon 2.0**
 Digital Twin + Memory Engine for traffic police resource planning.
 
-## Live Demo
+## 🚀 Live Demo
 
-- **Dashboard:** https://gridlock-dashboard.onrender.com
-- **API:** https://gridlock-api-en4l.onrender.com  ·  [/health](https://gridlock-api-en4l.onrender.com/health) · [/docs](https://gridlock-api-en4l.onrender.com/docs)
+### Dashboard
+https://gridlock-dashboard-xwmt.onrender.com/
+
+### API Base URL
+https://gridlock-api-xwmt.onrender.com
+
+### Health Check
+https://gridlock-api-xwmt.onrender.com/health
+
+### API Documentation (Swagger)
+https://gridlock-api-xwmt.onrender.com/docs
+
 
 > Hosted on Render's free tier — both services spin down after 15 minutes
 > of inactivity and take ~30–60s to wake on the first request after idle.
