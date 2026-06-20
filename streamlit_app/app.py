@@ -42,17 +42,48 @@ ZONE_COORDS = {
 # ══════════════════════════════════════════════
 # SIDEBAR — EVENT INPUT
 # ══════════════════════════════════════════════
+# ── Event Details Input ──
 st.sidebar.header("📋 Event Details")
 
-event_type  = st.sidebar.selectbox("Event Type", ["unplanned", "planned"])
-event_cause = st.sidebar.selectbox("Event Cause", [
-    "accident", "congestion", "vehicle_breakdown", "public_event",
-    "procession", "protest", "vip_movement", "tree_fall",
-    "water_logging", "construction", "pot_holes", "road_conditions",
-    "Debris", "Fog / Low Visibility", "others"
-])
-priority              = st.sidebar.selectbox("Priority", ["High", "Low"])
+event_type = st.sidebar.selectbox("Event Type", ["unplanned", "planned"])
+
+# Define valid causes by event type
+PLANNED_CAUSES = [
+    "public_event",
+    "procession", 
+    "vip_movement",
+    "construction",
+    "test_demo"
+]
+
+UNPLANNED_CAUSES = [
+    "accident",
+    "vehicle_breakdown",
+    "tree_fall",
+    "water_logging",
+    "debris",
+    "congestion",
+    "pot_holes",
+    "road_conditions"
+]
+
+# Show only valid causes for selected event type
+if event_type == "planned":
+    event_cause = st.sidebar.selectbox(
+        "Event Cause",
+        PLANNED_CAUSES,
+        help="Only planned event causes available"
+    )
+else:
+    event_cause = st.sidebar.selectbox(
+        "Event Cause", 
+        UNPLANNED_CAUSES,
+        help="Only unplanned event causes available"
+    )
+
+priority = st.sidebar.selectbox("Priority", ["High", "Low"])
 requires_road_closure = st.sidebar.checkbox("Requires Road Closure?")
+
 corridor = st.sidebar.selectbox("Corridor", [
     "Non-corridor", "Mysore Road", "Bellary Road 1", "Bellary Road 2",
     "Tumkur Road", "Hosur Road", "ORR North 1", "Old Madras Road",
