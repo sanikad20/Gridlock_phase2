@@ -1,6 +1,7 @@
 import streamlit as st
 import requests
 import folium
+import os
 from streamlit_folium import st_folium
 from datetime import datetime
 
@@ -10,7 +11,7 @@ try:
 except ImportError:
     CHAT_AVAILABLE = False
 
-API = "http://127.0.0.1:8000"
+API = os.getenv("API_URL", "http://127.0.0.1:8000")
 
 st.set_page_config(page_title="Gridlock — Congestion Forecaster", layout="wide")
 st.title("🚦 Gridlock — Event-Driven Congestion Forecaster")
