@@ -1,0 +1,31 @@
+# Render Blueprint — deploys both the API and the Streamlit dashboard
+# on the free tier. Push this repo to GitHub, then in Render dashboard:
+# New -> Blueprint -> connect repo -> it reads this file automatically.
+
+services:
+  - type: web
+    name: gridlock-api
+    runtime: python
+    plan: free
+    rootDir: api
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "uvicorn main:app --host 0.0.0.0 --port $PORT"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+
+  - type: web
+    name: gridlock-dashboard
+    runtime: python
+    plan: free
+    rootDir: streamlit_app
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "streamlit run app.py --server.port $PORT --server.address 0.0.0.0"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: API_URL
+        fromService:
+          type: web
+          name: gridlock-api
+          property: hostport
