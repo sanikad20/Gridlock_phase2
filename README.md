@@ -1,6 +1,34 @@
 # 🚦 Gridlock — Event-Driven Congestion Forecaster
 
-**Flipkart Gridlock Hackathon 2.0 — Round 2 Prototype**
+**Flipkart Gridlock Hackathon 2.0  — Round 2 Prototype**
+
+**Team:** Genai
+**Team Leader:** Sanika Deshmukh — [@sanikad20](https://github.com/sanikad20)
+**Team Members:** Pragati Kharat — [@pragatikharat17](https://github.com/pragatikharat17), Divya Addagatla — [@adivya15](https://github.com/adivya15)
+
+---
+
+## Problem Statement
+
+**Theme:** Event-Driven Congestion (Planned & Unplanned)
+
+**Operational Challenge:** Political rallies, festivals, sports events, construction activities, and sudden gatherings create localized traffic breakdowns.
+
+**Why It's Hard Today:**
+- Event impact is not quantified in advance.
+- Resource deployment is experience-driven.
+- No post-event learning system.
+
+**Problem Statement Direction:** How can historical and real-time data be used to forecast event-related traffic impact and recommend optimal manpower, barricading, and diversion plans?
+
+---
+
+## Our Solution
+
+Gridlock takes any traffic-affecting event — planned or unplanned — and turns it into a data-backed action plan in seconds. It predicts how severe the congestion will be and how long it'll take to clear, recommends exact officer/barricade/diversion counts, lets operators simulate "what-if" interventions before committing resources, and pulls up what actually worked in similar past incidents. Every outcome operators log feeds back in, so the system gets sharper with every incident it sees — closing the loop that's currently missing in manual, experience-driven deployment.
+
+---
+
 AI-powered traffic congestion prediction, digital twin simulation, and memory-driven resource planning for Bengaluru Traffic Police.
 
 ---
