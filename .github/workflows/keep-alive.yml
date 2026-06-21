@@ -1,25 +1,36 @@
 name: Keep Render API Awake
+
 on:
   schedule:
     # Runs every 10 minutes. GitHub may delay this slightly under load —
     # that's fine, Render's free-tier spin-down window is ~15 minutes.
     - cron: "*/10 * * * *"
   workflow_dispatch: {}   # lets you trigger it manually from the Actions tab to test
+
 jobs:
   ping:
     runs-on: ubuntu-latest
     steps:
       - name: Ping API health endpoint
         run: |
-          response=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 https://gridlock-api-xwmt.onrender.com/health)
+          # --max-time raised to 90s: Render free-tier cold starts can take
+          # 30-60s to wake, and the original 30s timeout was shorter than
+          # that window, causing curl to exit 28 (timeout) and fail the job
+          # even though the ping was doing exactly what it's meant to do —
+          # waking a sleeping service.
+          # || true ensures a timeout here is reported, not treated as a
+          # job-ending crash — we want to log it and keep going, not stop
+          # the dashboard ping from running afterward.
+          response=$(curl -s -o /dev/null -w "%{http_code}" --max-time 90 https://gridlock-api-xwmt.onrender.com/health || echo "000")
           echo "API health check responded with status: $response"
-          if [ "$response" -ne 200 ]; then
-            echo "::warning::API health check did not return 200 (got $response)"
+          if [ "$response" != "200" ]; then
+            echo "::warning::API health check did not return 200 (got $response — 000 means timeout/no response, often a slow cold start)"
           fi
+
       - name: Ping Dashboard
         run: |
-          response=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 https://gridlock-dashboard-xwmt.onrender.com)
+          response=$(curl -s -o /dev/null -w "%{http_code}" --max-time 90 https://gridlock-dashboard-xwmt.onrender.com || echo "000")
           echo "Dashboard responded with status: $response"
-          if [ "$response" -ne 200 ]; then
-            echo "::warning::Dashboard did not return 200 (got $response)"
+          if [ "$response" != "200" ]; then
+            echo "::warning::Dashboard did not return 200 (got $response — 000 means timeout/no response, often a slow cold start)"
           fi
