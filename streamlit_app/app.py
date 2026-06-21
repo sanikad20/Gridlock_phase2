@@ -69,10 +69,19 @@ html, body, [class*="css"]{
 }
 
 #MainMenu, footer, header[data-testid="stHeader"]{visibility:hidden; height:0;}
-.block-container{padding-top:1rem; padding-bottom:2rem; max-width:100%; width:100%;}
-[data-testid="stMain"], [data-testid="stMainBlockContainer"], .main .block-container{
-  max-width:100% !important;
-  width:100% !important;
+.block-container{padding-top:1rem; padding-bottom:2rem;}
+/* Full-width main content only above the mobile breakpoint. Forcing this
+   unconditionally was fighting Streamlit's own responsive behavior, which
+   normally turns the sidebar into a sliding overlay on narrow screens —
+   the forced 100% width was causing the main content and the sidebar
+   overlay to occupy the same space simultaneously instead of one
+   yielding to the other. */
+@media (min-width: 641px){
+  .block-container{ max-width:100%; width:100%; }
+  [data-testid="stMain"], [data-testid="stMainBlockContainer"], .main .block-container{
+    max-width:100% !important;
+    width:100% !important;
+  }
 }
 
 /* ---------- Sidebar ---------- */
@@ -377,7 +386,12 @@ div[data-testid="stMetric"]{
   box-shadow:var(--shadow-sm);
 }
 div[data-testid="stMetric"] label{color:var(--text-faint) !important; font-size:0.72rem !important; text-transform:uppercase; letter-spacing:.05em;}
-div[data-testid="stMetricValue"]{font-family:'JetBrains Mono',monospace;}
+div[data-testid="stMetricValue"]{
+  font-family:'JetBrains Mono',monospace;
+  color:var(--text) !important;
+}
+div[data-testid="stMetricValue"] div{ color:var(--text) !important; }
+div[data-testid="stMetricDelta"]{ color:var(--text-dim) !important; }
 
 .stButton>button{
   border-radius:10px; font-weight:600; border:1px solid var(--border);
@@ -504,13 +518,57 @@ section[data-testid="stSidebar"] [data-testid="stExpander"]:nth-of-type(2) div[d
 .stSlider [data-baseweb="slider"] > div > div{ background:var(--border) !important; }
 .stSlider [data-baseweb="slider"] > div > div > div{ background:var(--info) !important; }
 .stSlider [data-testid="stTickBar"]{ color:var(--text-faint) !important; }
-div[data-testid="stThumbValue"]{
-  color:#fff !important; background:var(--info) !important; font-weight:700 !important;
+/* The floating number above the slider thumb (e.g. "6", "2.40") — real
+   testid is stSliderThumbValue, not stThumbValue as previously written,
+   which is why the earlier rule never matched anything. Styled as a small
+   rounded pill so it reads as a tooltip rather than a jarring rectangle. */
+div[data-testid="stSliderThumbValue"]{
+  background:var(--info) !important;
+  color:#FFFFFF !important;
+  font-weight:700 !important;
+  border-radius:999px !important;
+  padding:1px 10px !important;
+  font-size:0.85em !important;
+}
+div[data-testid="stSliderThumbValue"] p{ color:#FFFFFF !important; margin:0 !important; }
+/* Tick-bar min/max endpoint labels ("0", "23") should stay plain muted
+   text, not get swept into the thumb-value pill styling. */
+div[data-testid="stTickBar"] [data-testid="stMarkdownContainer"] p{
+  color:var(--text-faint) !important;
+  background:transparent !important;
+  font-weight:400 !important;
 }
 
 /* ---------- Checkboxes ---------- */
 .stCheckbox label p{ color:var(--text-dim) !important; }
-.stCheckbox [data-baseweb="checkbox"] span{ background:var(--card-alt) !important; border-color:var(--border) !important; }
+/* Streamlit's checkbox renders a real (visually hidden) <input
+   type="checkbox"> alongside a styled "Checkmark" box whose checked
+   appearance is driven by styled-components props ($checked) that are
+   deliberately NOT forwarded to the DOM — so no CSS attribute selector
+   (e.g. [aria-checked="true"]) ever matches it, which is why earlier
+   attempts silently did nothing. :has() lets us style the checkbox
+   container based on its real native input's actual :checked state
+   instead, without needing BaseWeb's internal (hashed, unstable) class
+   names at all. */
+.stCheckbox [data-baseweb="checkbox"]{
+  border-radius:4px;
+}
+.stCheckbox [data-baseweb="checkbox"]:not(:has(input:checked)) > span:first-of-type{
+  background:var(--card-alt) !important;
+  border-color:var(--border) !important;
+}
+.stCheckbox [data-baseweb="checkbox"]:has(input:checked) > span:first-of-type{
+  background:#1D4ED8 !important;
+  border-color:#3B82F6 !important;
+}
+.stCheckbox [data-baseweb="checkbox"]:has(input:checked) > span:first-of-type svg{
+  fill:#FFFFFF !important;
+  opacity:1 !important;
+}
+.stCheckbox [data-baseweb="checkbox"]:has(input:checked) ~ label,
+.stCheckbox:has(input:checked) label p{
+  color:#FFFFFF !important;
+}
 
 /* ---------- Tighter, denser layout: reduce dead vertical air ---------- */
 .block-container{ padding-left:2rem; padding-right:2rem; }
@@ -520,6 +578,96 @@ hr{ margin:1.1rem 0 !important; }
 [data-testid="column"]{ padding:0 6px; }
 section[data-testid="stSidebar"] [data-testid="stExpander"] div[data-testid="stExpanderDetails"]{
   padding-top:6px;
+}
+
+/* ══════════════════════════════════════════════
+   RESPONSIVE — make the app fit every screen size.
+   Streamlit's own st.columns() already auto-stacks below ~640px, but the
+   hand-built raw CSS grids below (header, feed rows, resource tiles,
+   memory-card detail grid) don't get that behavior for free since they're
+   plain HTML/CSS, not Streamlit layout primitives — each needs its own
+   breakpoint or it will overflow / get unreadably squeezed on narrow
+   screens (tablets, phones, split-screen windows).
+   ══════════════════════════════════════════════ */
+
+/* Large laptop / smaller desktop */
+@media (max-width: 1200px){
+  .block-container{ padding-left:1.25rem; padding-right:1.25rem; }
+  .gx-header{ padding:14px 18px; }
+  .gx-header-right{ gap:14px; }
+}
+
+/* Tablet */
+@media (max-width: 900px){
+  html, body, [class*="css"]{ font-size:15px; }
+  .gx-header{ flex-wrap:wrap; gap:12px; row-gap:10px; }
+  .gx-header-right{ width:100%; justify-content:space-between; flex-wrap:wrap; gap:10px; }
+  .gx-feed-row, .gx-feed-head > .gx-feed-row{
+    grid-template-columns: 1fr 1fr;
+    row-gap:4px;
+  }
+  div[style*="grid-template-columns:repeat(3,1fr)"]{
+    grid-template-columns:1fr 1fr !important;
+  }
+  /* KPI card labels ("ESTIMATED DELAY", "CONFIDENCE") were breaking
+     mid-word at this width because uppercase + letter-spacing made the
+     full word too wide for a single line in a 4-column st.columns() row,
+     and the browser had no good word-boundary to wrap at. Tightening
+     letter-spacing and font-size here lets the full word fit; word-break
+     is pinned to normal as a backstop so it never splits a word again
+     even if a future label is longer. */
+  .gx-kpi-label{
+    font-size:0.62rem;
+    letter-spacing:.02em;
+    word-break:normal;
+    overflow-wrap:normal;
+    white-space:normal;
+  }
+  .gx-kpi-value{ font-size:1.35rem; }
+  .gx-kpi-dominant .gx-kpi-value{ font-size:1.7rem; }
+}
+
+/* Phone / narrow window */
+@media (max-width: 640px){
+  .block-container{ padding-left:0.75rem; padding-right:0.75rem; }
+  html, body, [class*="css"]{ font-size:14px; }
+  .gx-header{ padding:12px 14px; }
+  .gx-title{ font-size:1.1rem; }
+  .gx-subtitle{ font-size:0.7rem; }
+  .gx-header-stat{ text-align:left; }
+  .gx-kpi-dominant .gx-kpi-value{ font-size:1.7rem; }
+  .gx-kpi-value{ font-size:1.3rem; }
+  .gx-card{ padding:14px 14px; }
+  .gx-feed-row{
+    grid-template-columns: 1fr !important;
+    gap:4px;
+    padding:10px 8px;
+  }
+  .gx-feed-head{ display:none; } /* column headers don't make sense in a single-column stacked layout */
+  div[style*="grid-template-columns:1fr 1fr; gap:6px 18px"]{
+    grid-template-columns:1fr !important;
+  }
+  div[style*="grid-template-columns:repeat(3,1fr)"]{
+    grid-template-columns:1fr !important;
+  }
+  .gx-scenario{ padding:12px; }
+  /* Verified empirically (Playwright) that Streamlit's sidebar does NOT
+     automatically become an overlay on narrow viewports — it stays in
+     normal document flow at a fixed ~300px width, which on a ~390px phone
+     leaves only a thin sliver for the main content, visible bleeding
+     through alongside it. Force it into a fixed, full-width overlay here
+     instead so it properly takes over the screen when open, matching how
+     a responsive drawer should behave. */
+  section[data-testid="stSidebar"]{
+    position:fixed !important;
+    top:0; left:0; bottom:0;
+    width:100vw !important;
+    max-width:100vw !important;
+    z-index:999999 !important;
+  }
+  section[data-testid="stSidebar"][aria-expanded="false"]{
+    transform:translateX(-100%);
+  }
 }
 </style>
 """, unsafe_allow_html=True)
@@ -883,12 +1031,22 @@ with col1:
         </div>
         """, unsafe_allow_html=True)
 
-        if payload["hour"] in [8, 9, 10, 17, 18, 19]:
+        # Use the snapshotted payload from when THIS prediction was made,
+        # not the live `payload` variable — `payload` reflects whatever
+        # the sidebar currently says, which can have changed since the
+        # prediction ran (e.g. checking "Requires Road Closure?" after
+        # the fact). Reading live state here made the banner pop up/down
+        # based on sidebar edits that the displayed prediction never
+        # actually accounted for — looking like the checkbox was wired
+        # backwards when it was actually just out of sync with the
+        # results being shown above it.
+        snapshot_payload = st.session_state.get("last_payload", payload)
+        if snapshot_payload["hour"] in [8, 9, 10, 17, 18, 19]:
             st.warning("⚠️ Peak hour — expect higher congestion impact")
-        if payload["requires_road_closure"]:
+        if snapshot_payload["requires_road_closure"]:
             st.error("🚫 Road closure required — activate diversion plan immediately")
 
-        st.caption(f"Event ID: {data.get('event_id','—')} | Corridor: {payload['corridor']} | Zone: {payload['zone']}")
+        st.caption(f"Event ID: {data.get('event_id','—')} | Corridor: {snapshot_payload['corridor']} | Zone: {snapshot_payload['zone']}")
     else:
         st.markdown("""
         <div class="gx-card" style="text-align:center; padding:36px 20px; color:#64748B;">
