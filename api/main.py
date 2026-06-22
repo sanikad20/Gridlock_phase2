@@ -1,14 +1,11 @@
 """
-Gridlock Hackathon 2.0 — api/main.py (UPDATED v3.2)
-====================================================
-New in v3.2:
-  - /similar-events now returns latitude/longitude per result,
-    so the frontend can plot historical incident markers on the map.
-
-New in v3.1:
-  - Event Type / Event Cause validation — prevents invalid combinations
-  - Enforces Planned vs Unplanned event rules
-  - Clear error messages guide users to valid combinations
+Gridlock Hackathon 2.0 — api/main.py (FINAL)
+=============================================
+Changes in this version:
+  - Auto-seeds 5 demo events on startup (survives Render redeploys)
+  - protest/procession/vip_movement valid for both planned and unplanned
+  - Softened cause validation — rejects only truly unknown causes
+  - lat/lon included in /similar-events response for map markers
 """
 
 from fastapi import FastAPI, HTTPException
@@ -19,7 +16,7 @@ from datetime import datetime, timedelta
 import numpy as np
 import pandas as pd
 
-app = FastAPI(title="Gridlock Congestion API", version="3.2")
+app = FastAPI(title="Gridlock Congestion API", version="3.3")
 
 # ══════════════════════════════════════════════
 # LOAD MODEL ARTIFACTS
@@ -81,29 +78,65 @@ HIGH_RISK_ZONES     = ["Central Zone 2", "North Zone 1", "South Zone 1"]
 
 # ══════════════════════════════════════════════
 # EVENT TYPE / CAUSE VALIDATION
+# procession, vip_movement are valid for BOTH planned and unplanned
 # ══════════════════════════════════════════════
 PLANNED_CAUSES = {
-    "public_event",
-    "procession",
-    "vip_movement",
-    "construction",
-    "test_demo"
+    "public_event", "procession", "vip_movement", "construction", "test_demo"
 }
 
 UNPLANNED_CAUSES = {
-    "accident",
-    "vehicle_breakdown",
-    "tree_fall",
-    "water_logging",
-    "debris",
-    "congestion",
-    "pot_holes",
-    "road_conditions"
+    "accident", "vehicle_breakdown", "tree_fall", "water_logging",
+    "debris", "Debris", "congestion", "pot_holes", "road_conditions",
+    "protest", "procession", "vip_movement", "Fog / Low Visibility",
 }
 
+ALL_VALID_CAUSES = PLANNED_CAUSES | UNPLANNED_CAUSES
+
 # ══════════════════════════════════════════════
-# DB INIT
+# DB INIT + AUTO-SEED
 # ══════════════════════════════════════════════
+def _seed_demo_events(conn):
+    """Seed 5 demo events so Memory Engine is never empty after redeploy."""
+    now = datetime.utcnow().isoformat()
+    events = [
+        ("EV-SEED01", "planned",   "procession",       12.9000, 77.5700, "South Zone 1",  "Mysore Road",    "High", 1, "none", "Unknown", None, 18, 6, 9,  "Severe",   123.0),
+        ("EV-SEED02", "planned",   "public_event",      12.8700, 77.6000, "South Zone 2",  "Hosur Road",     "High", 1, "none", "Unknown", None, 19, 5, 4,  "Severe",   145.0),
+        ("EV-SEED03", "unplanned", "protest",           13.0500, 77.5800, "North Zone 1",  "Bellary Road 1", "High", 1, "none", "Unknown", None, 10, 1, 3,  "Severe",   110.0),
+        ("EV-SEED04", "unplanned", "accident",          12.9800, 77.6000, "Central Zone 2","ORR East 1",     "High", 0, "none", "Unknown", None, 9,  0, 6,  "Moderate", 78.0),
+        ("EV-SEED05", "unplanned", "vehicle_breakdown", 12.9900, 77.6500, "East Zone 1",   "ORR East 1",     "High", 0, "truck","Unknown", None, 9,  0, 6,  "Moderate", 65.0),
+    ]
+    outcomes = [
+        ("EV-SEED01", "Severe",   120.0, 8,  4, 54.0, "Plan B — Mysore Road diversion via Kanakapura Road", "Ganesh Visarjan. Plan B reduced delay by 54%."),
+        ("EV-SEED02", "Severe",   140.0, 10, 5, 41.0, "Plan A — Hosur Road alternate via Electronic City",  "IPL Chinnaswamy. Extra officers helped."),
+        ("EV-SEED03", "Moderate", 95.0,  6,  3, 38.0, "Plan C — Bellary Road diversion via Hebbal flyover", "Political rally. Resolved faster than predicted."),
+        ("EV-SEED04", "Moderate", 70.0,  4,  2, 32.0, "Plan A — Standard traffic management",               "Accident on ORR cleared faster than predicted."),
+        ("EV-SEED05", "Moderate", 60.0,  4,  2, 28.0, "Plan A — Standard monitoring",                       "Truck breakdown. Tow truck dispatched quickly."),
+    ]
+    for ev in events:
+        try:
+            conn.execute("""
+                INSERT INTO events (id, event_type, event_cause, latitude, longitude,
+                    zone, corridor, priority, requires_road_closure, veh_type,
+                    police_station, junction, hour, day_of_week, month,
+                    pred_severity, pred_delay_mins, created_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """, (*ev, now))
+        except Exception:
+            pass
+    for i, oc in enumerate(outcomes):
+        try:
+            conn.execute("""
+                INSERT INTO outcomes (id, event_id, actual_severity, actual_delay_mins,
+                    officers_deployed, barricades_used, delay_reduced_pct,
+                    plan_used, notes, logged_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?)
+            """, (f"OUT-SEED0{i+1}", *oc, now))
+        except Exception:
+            pass
+    conn.commit()
+    print("Auto-seeded 5 demo events.")
+
+
 def init_db():
     conn = sqlite3.connect(DB_PATH)
     conn.executescript("""
@@ -141,6 +174,12 @@ def init_db():
     );
     """)
     conn.commit()
+
+    # Auto-seed if DB is empty — survives Render free-tier redeploys
+    count = conn.execute("SELECT COUNT(*) FROM events").fetchone()[0]
+    if count == 0:
+        _seed_demo_events(conn)
+
     conn.close()
 
 init_db()
@@ -151,7 +190,7 @@ init_db()
 class EventInput(BaseModel):
     event_type            : str
     event_cause           : str
-    priority               : str
+    priority              : str
     requires_road_closure : bool
     latitude              : float
     longitude             : float
@@ -189,8 +228,8 @@ class DigitalTwinInput(BaseModel):
     hour                  : int
     day_of_week           : int
     month                 : int
-    extra_barricades      : int = 0
-    close_main_road       : bool = False
+    extra_barricades      : int   = 0
+    close_main_road       : bool  = False
     attendance_multiplier : float = 1.0
 
 # ══════════════════════════════════════════════
@@ -208,25 +247,13 @@ def te_lookup(group_key: str, raw_key: str) -> float:
     return float(val) if val is not None else float(entry["global"])
 
 def build_feature_row(e: EventInput) -> pd.DataFrame:
-    """
-    Build feature row from EventInput with validation.
-    Ensures event_type and event_cause are valid combinations.
-    """
-
-    # ── VALIDATION: Event Type vs Event Cause ──
-    if e.event_type == "planned" and e.event_cause not in PLANNED_CAUSES:
+    # Soft validation — reject only truly unknown causes
+    if e.event_cause not in ALL_VALID_CAUSES:
         raise ValueError(
-            f"❌ Invalid combination: '{e.event_cause}' cannot be a PLANNED event.\n"
-            f"Valid planned causes: {sorted(PLANNED_CAUSES)}"
+            f"Unknown event cause: '{e.event_cause}'. "
+            f"Valid causes: {sorted(ALL_VALID_CAUSES)}"
         )
 
-    if e.event_type == "unplanned" and e.event_cause not in UNPLANNED_CAUSES:
-        raise ValueError(
-            f"❌ Invalid combination: '{e.event_cause}' is not an UNPLANNED event.\n"
-            f"Valid unplanned causes: {sorted(UNPLANNED_CAUSES)}"
-        )
-
-    # ── FEATURE ENGINEERING ──
     is_peak    = 1 if e.hour in [8, 9, 10, 17, 18, 19] else 0
     is_weekend = 1 if e.day_of_week >= 5 else 0
 
@@ -248,9 +275,9 @@ def build_feature_row(e: EventInput) -> pd.DataFrame:
     priority_enc     = 2 if e.priority == "High" else 1
     road_closure_enc = int(e.requires_road_closure)
 
-    cause_zone_key  = f"{e.event_cause}_{e.zone}"
-    cause_ps_key    = f"{e.event_cause}_{e.police_station or 'Unknown'}"
-    cause_hour_key  = f"{e.event_cause}_{e.hour}"
+    cause_zone_key = f"{e.event_cause}_{e.zone}"
+    cause_ps_key   = f"{e.event_cause}_{e.police_station or 'Unknown'}"
+    cause_hour_key = f"{e.event_cause}_{e.hour}"
 
     row = {
         "event_cause_enc"   : event_cause_enc,
@@ -302,10 +329,9 @@ def get_explanation(e: EventInput, severity: str) -> list:
     return reasons
 
 def apply_digital_twin_adjustment(base_delay, base_severity, extra_barricades,
-                                    close_main_road, attendance_multiplier):
+                                   close_main_road, attendance_multiplier):
     adjusted_delay = base_delay
-    barricade_reduction = extra_barricades * 0.05
-    adjusted_delay *= (1 - barricade_reduction)
+    adjusted_delay *= (1 - extra_barricades * 0.05)
     if close_main_road:
         adjusted_delay *= 1.35
     if attendance_multiplier > 1:
@@ -336,7 +362,6 @@ def apply_digital_twin_adjustment(base_delay, base_severity, extra_barricades,
     }
 
 def event_to_vector(event: dict) -> np.ndarray:
-    """Numeric vector for cosine similarity matching between events."""
     cause_map = {
         'accident': 3, 'congestion': 3, 'vip_movement': 3, 'procession': 3, 'protest': 3,
         'public_event': 2, 'tree_fall': 2, 'water_logging': 2, 'Debris': 2, 'debris': 2,
@@ -367,7 +392,7 @@ def cosine_sim(v1: np.ndarray, v2: np.ndarray) -> float:
 
 @app.get("/")
 def root():
-    return {"status": "running", "message": "Gridlock Congestion API v3.2", "features": len(FEATURES)}
+    return {"status": "running", "message": "Gridlock Congestion API v3.3", "features": len(FEATURES)}
 
 @app.get("/health")
 def health():
@@ -386,11 +411,10 @@ def predict_event(e: EventInput):
     except ValueError as ve:
         raise HTTPException(400, str(ve))
 
-    pred_code = int(np.array(classifier.predict(row)).flatten()[0])
-    severity  = SEVERITY_LABEL.get(pred_code, "Moderate")
-    delay     = float(np.array(regressor.predict(row)).flatten()[0])
-    delay     = max(0.0, min(delay, 1440.0))
-
+    pred_code  = int(np.array(classifier.predict(row)).flatten()[0])
+    severity   = SEVERITY_LABEL.get(pred_code, "Moderate")
+    delay      = float(np.array(regressor.predict(row)).flatten()[0])
+    delay      = max(0.0, min(delay, 1440.0))
     confidence = None
     if hasattr(classifier, "predict_proba"):
         try:
@@ -420,11 +444,10 @@ def predict_and_log(e: EventInput):
     except ValueError as ve:
         raise HTTPException(400, str(ve))
 
-    pred_code = int(np.array(classifier.predict(row)).flatten()[0])
-    severity  = SEVERITY_LABEL.get(pred_code, "Moderate")
-    delay     = float(np.array(regressor.predict(row)).flatten()[0])
-    delay     = max(0.0, min(delay, 1440.0))
-
+    pred_code  = int(np.array(classifier.predict(row)).flatten()[0])
+    severity   = SEVERITY_LABEL.get(pred_code, "Moderate")
+    delay      = float(np.array(regressor.predict(row)).flatten()[0])
+    delay      = max(0.0, min(delay, 1440.0))
     confidence = None
     if hasattr(classifier, "predict_proba"):
         try:
@@ -472,17 +495,15 @@ def digital_twin(e: DigitalTwinInput):
         police_station=e.police_station, junction=e.junction,
         hour=e.hour, day_of_week=e.day_of_week, month=e.month
     )
-
     try:
         row = build_feature_row(base_event)
     except ValueError as ve:
         raise HTTPException(400, str(ve))
 
-    pred_code = int(np.array(classifier.predict(row)).flatten()[0])
-    severity  = SEVERITY_LABEL.get(pred_code, "Moderate")
-    delay     = float(np.array(regressor.predict(row)).flatten()[0])
-    delay     = max(5.0, min(delay, 1440.0))
-
+    pred_code  = int(np.array(classifier.predict(row)).flatten()[0])
+    severity   = SEVERITY_LABEL.get(pred_code, "Moderate")
+    delay      = float(np.array(regressor.predict(row)).flatten()[0])
+    delay      = max(5.0, min(delay, 1440.0))
     confidence = None
     if hasattr(classifier, "predict_proba"):
         try:
@@ -490,16 +511,13 @@ def digital_twin(e: DigitalTwinInput):
         except Exception:
             confidence = None
 
-    scenario_a = apply_digital_twin_adjustment(
-        delay, severity, e.extra_barricades, False, 1.0)
+    scenario_a = apply_digital_twin_adjustment(delay, severity, e.extra_barricades, False, 1.0)
     scenario_a["scenario"] = f"A — {e.extra_barricades} Extra Barricades Only"
 
-    scenario_b = apply_digital_twin_adjustment(
-        delay, severity, 0, e.close_main_road, 1.0)
+    scenario_b = apply_digital_twin_adjustment(delay, severity, 0, e.close_main_road, 1.0)
     scenario_b["scenario"] = "B — Diversion Activated Only"
 
-    scenario_c = apply_digital_twin_adjustment(
-        delay, severity, e.extra_barricades, e.close_main_road, e.attendance_multiplier)
+    scenario_c = apply_digital_twin_adjustment(delay, severity, e.extra_barricades, e.close_main_road, e.attendance_multiplier)
     scenario_c["scenario"] = "C — Combined (your settings)"
 
     scenarios = [scenario_a, scenario_b, scenario_c]
@@ -507,12 +525,12 @@ def digital_twin(e: DigitalTwinInput):
 
     return {
         "baseline": {
-            "severity"            : severity,
-            "delay_minutes"       : round(delay, 1),
-            "confidence"          : round(confidence, 2) if confidence else None,
-            "estimated_clearance" : CLEARANCE_MINS[severity],
-            "recommendation"      : RECOMMENDATION[severity],
-            "resources"           : RESOURCE_TABLE[severity],
+            "severity"           : severity,
+            "delay_minutes"      : round(delay, 1),
+            "confidence"         : round(confidence, 2) if confidence else None,
+            "estimated_clearance": CLEARANCE_MINS[severity],
+            "recommendation"     : RECOMMENDATION[severity],
+            "resources"          : RESOURCE_TABLE[severity],
         },
         "scenarios"     : scenarios,
         "best_scenario" : best["scenario"],
@@ -523,28 +541,22 @@ def digital_twin(e: DigitalTwinInput):
 def predict_ensemble(e: EventInput):
     if not HAS_ENSEMBLE:
         raise HTTPException(400, "Ensemble not found.")
-
     try:
         row = build_feature_row(e)
     except ValueError as ve:
         raise HTTPException(400, str(ve))
 
     preds, names = [], []
-
     if "lgbm" in ensemble_models:
-        preds.append(int(np.array(ensemble_models["lgbm"].predict(row)).flatten()[0]))
-        names.append("LightGBM")
+        preds.append(int(np.array(ensemble_models["lgbm"].predict(row)).flatten()[0])); names.append("LightGBM")
     if "cat" in ensemble_models:
-        preds.append(int(np.array(ensemble_models["cat"].predict(row)).flatten()[0]))
-        names.append("CatBoost")
+        preds.append(int(np.array(ensemble_models["cat"].predict(row)).flatten()[0])); names.append("CatBoost")
     if "rf" in ensemble_models:
-        preds.append(int(np.array(ensemble_models["rf"].predict(row)).flatten()[0]))
-        names.append("RandomForest")
+        preds.append(int(np.array(ensemble_models["rf"].predict(row)).flatten()[0])); names.append("RandomForest")
     if "reg" in ensemble_models:
         delay_pred = float(np.array(ensemble_models["reg"].predict(row)).flatten()[0])
         reg_class  = 0 if delay_pred < 30 else (1 if delay_pred < 120 else 2)
-        preds.append(reg_class)
-        names.append("Regressor→Class")
+        preds.append(reg_class); names.append("Regressor→Class")
 
     final_code = int(np.bincount(preds, minlength=3).argmax())
     severity   = SEVERITY_LABEL.get(final_code, "Moderate")
@@ -592,21 +604,14 @@ def log_outcome(o: OutcomeInput):
 @app.post("/similar-events")
 def similar_events(e: EventInput, top_k: int = 3):
     """
-    Returns top-k similar past events ranked by cosine similarity score (%).
-    Includes latitude/longitude so the frontend can plot historical
-    incident markers on the congestion map.
-
-    NOTE (fix): previously this used a plain LEFT JOIN against `outcomes`.
-    If an event had more than one outcome logged against it (e.g. the
-    operator submitted the outcome form twice for the same event_id), the
-    join would fan out and produce one result row per outcome — making the
-    same underlying incident appear as multiple "similar past events" in
-    the Memory Engine panel. The subquery below selects only the most
-    recently logged outcome per event, so each event contributes exactly
-    one row regardless of how many outcomes were recorded for it, while
-    still preserving events that have zero outcomes (plan_used = NULL).
+    Returns top-k similar past events ranked by cosine similarity.
+    Includes latitude/longitude for map marker plotting.
+    Uses subquery to prevent fan-out when multiple outcomes exist per event.
     """
-    query_vec = event_to_vector(e.dict())
+    try:
+        query_vec = event_to_vector(e.dict())
+    except Exception:
+        query_vec = event_to_vector({})
 
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
@@ -689,10 +694,6 @@ def zone_health():
 
 @app.get("/live-feed")
 def live_feed(limit: int = 10):
-    """
-    Live Operations Feed — most recent events with predicted severity,
-    delay, and whether an outcome has been logged yet.
-    """
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     rows = conn.execute("""
@@ -711,61 +712,49 @@ def live_feed(limit: int = 10):
     feed = []
     for r in rows:
         d = dict(r)
-        status = "Resolved" if d["has_outcome"] else "Active"
         feed.append({
-            "event_id"        : d["id"],
-            "event_cause"     : d["event_cause"],
-            "zone"            : d["zone"],
-            "corridor"        : d["corridor"],
-            "priority"        : d["priority"],
-            "severity"        : d["pred_severity"],
-            "delay_minutes"   : d["pred_delay_mins"],
-            "status"          : status,
-            "actual_severity" : d["actual_severity"],
+            "event_id"         : d["id"],
+            "event_cause"      : d["event_cause"],
+            "zone"             : d["zone"],
+            "corridor"         : d["corridor"],
+            "priority"         : d["priority"],
+            "severity"         : d["pred_severity"],
+            "delay_minutes"    : d["pred_delay_mins"],
+            "status"           : "Resolved" if d["has_outcome"] else "Active",
+            "actual_severity"  : d["actual_severity"],
             "delay_reduced_pct": d["delay_reduced_pct"],
-            "created_at"      : d["created_at"],
+            "created_at"       : d["created_at"],
         })
     return {"feed": feed, "count": len(feed)}
 
 @app.get("/kpi-summary")
 def kpi_summary():
-    """
-    Aggregate KPI cards: active incidents, predicted severe cases,
-    average expected delay, high-risk zones currently flagged.
-    """
-    conn = sqlite3.connect(DB_PATH)
+    conn    = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
+    cutoff  = (datetime.utcnow() - timedelta(hours=24)).isoformat()
 
-    cutoff = (datetime.utcnow() - timedelta(hours=24)).isoformat()
-
-    all_events = conn.execute(
-        "SELECT * FROM events WHERE created_at >= ?", (cutoff,)
-    ).fetchall()
-
+    all_events   = conn.execute("SELECT * FROM events WHERE created_at >= ?", (cutoff,)).fetchall()
     resolved_ids = {r["event_id"] for r in conn.execute("SELECT event_id FROM outcomes").fetchall()}
     conn.close()
 
-    total = len(all_events)
-    active = sum(1 for e in all_events if e["id"] not in resolved_ids)
+    active       = sum(1 for e in all_events if e["id"] not in resolved_ids)
     severe_count = sum(1 for e in all_events if e["pred_severity"] == "Severe")
-    delays = [e["pred_delay_mins"] for e in all_events if e["pred_delay_mins"] is not None]
-    avg_delay = round(sum(delays) / len(delays), 1) if delays else 0.0
+    delays       = [e["pred_delay_mins"] for e in all_events if e["pred_delay_mins"] is not None]
+    avg_delay    = round(sum(delays) / len(delays), 1) if delays else 0.0
 
     zone_counts = {}
     for e in all_events:
         z = e["zone"]
         zone_counts[z] = zone_counts.get(z, 0) + 1
-    high_risk_zones_flagged = sum(
-        1 for z in zone_counts if ZONE_RISK.get(z, 0) > 70
-    )
+    high_risk_zones_flagged = sum(1 for z in zone_counts if ZONE_RISK.get(z, 0) > 70)
 
     return {
-        "active_incidents"         : active,
-        "total_incidents_24h"       : total,
-        "predicted_severe_cases"    : severe_count,
-        "avg_expected_delay_mins"   : avg_delay,
-        "high_risk_zones_flagged"   : high_risk_zones_flagged,
-        "window"                    : "last 24 hours",
+        "active_incidents"        : active,
+        "total_incidents_24h"     : len(all_events),
+        "predicted_severe_cases"  : severe_count,
+        "avg_expected_delay_mins" : avg_delay,
+        "high_risk_zones_flagged" : high_risk_zones_flagged,
+        "window"                  : "last 24 hours",
     }
 
 @app.get("/map-data/{event_id}")
@@ -781,6 +770,10 @@ def map_data(event_id: str):
     lat, lon, severity, delay = row
     radius_km = {"Quick": 0.3, "Moderate": 0.8, "Severe": 1.5}.get(severity, 0.8)
     return {
-        "event_id": event_id, "latitude": lat, "longitude": lon,
-        "severity": severity, "delay_minutes": delay, "radius_km": radius_km,
+        "event_id"     : event_id,
+        "latitude"     : lat,
+        "longitude"    : lon,
+        "severity"     : severity,
+        "delay_minutes": delay,
+        "radius_km"    : radius_km,
     }
