@@ -43,7 +43,7 @@ CREATE TABLE IF NOT EXISTS outcomes (
 conn.commit()
 
 events = [
-    ("EV-SEED01", "unplanned", "procession",       12.9000, 77.5700, "South Zone 1",  "Mysore Road",    "High", 1, "none", "Basavanagudi PS", None, 18, 6, 9,  "Severe",   123.0),
+    ("EV-SEED01", "planned", "procession",       12.9000, 77.5700, "South Zone 1",  "Mysore Road",    "High", 1, "none", "Basavanagudi PS", None, 18, 6, 9,  "Severe",   123.0),
     ("EV-SEED02", "planned",   "public_event",      12.8700, 77.6000, "South Zone 2",  "Hosur Road",     "High", 1, "none", "Cubbon Park PS",  None, 19, 5, 4,  "Severe",   145.0),
     ("EV-SEED03", "unplanned", "protest",           13.0500, 77.5800, "North Zone 1",  "Bellary Road 1", "High", 1, "none", "Hebbal PS",       None, 10, 1, 3,  "Severe",   110.0),
     ("EV-SEED04", "unplanned", "accident",          12.9800, 77.6000, "Central Zone 2","ORR East 1",     "High", 0, "none", "Whitefield PS",   None, 9,  0, 6,  "Moderate", 78.0),
