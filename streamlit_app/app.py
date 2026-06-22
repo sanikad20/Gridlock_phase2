@@ -787,9 +787,16 @@ with st.sidebar.expander("🚨 INCIDENT DETAILS", expanded=True):
 
     priority = st.selectbox("Priority", ["High", "Low"])
     requires_road_closure = st.checkbox("Requires Road Closure?")
-    veh_type = st.selectbox("Vehicle Type", [
+    # Vehicle type only relevant for accident/vehicle_breakdown
+    VEHICLE_CAUSES = ["accident", "vehicle_breakdown"]
+    if event_cause in VEHICLE_CAUSES:
+      veh_type = st.selectbox("Vehicle Type", [
         "none", "car", "bus", "truck", "two_wheeler", "auto", "heavy_vehicle"
-    ])
+      ])
+    else:
+      veh_type = "none"
+      st.caption("🚫 Vehicle type not applicable for this cause")
+
 
 with st.sidebar.expander("📍 LOCATION", expanded=True):
     zone = st.selectbox("Zone", [
